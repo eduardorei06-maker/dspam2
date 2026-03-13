@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Keyboard, TouchableWithoutFeedback, ActivityIndicator, Platform, Image, ScrollView, KeyboardAvoidingView } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const sabrinaPhotos = [
   require('./assets/1.jpg'),
@@ -28,7 +29,24 @@ export default function App() {
   const [error, setError] = useState('');
   const [randomPhoto, setRandomPhoto] = useState(null);
 
-  const buscarCep = () => {
+  const handleSaveManual = async () => {
+    if (!cepData?.logradouro || !cepData?.bairro || !cepData?.localidade || !cepData?.uf) {
+      setError('Por favor, preencha rua, bairro, cidade e UF.');
+      return;
+    }
+    setError('');
+    const finalData = { ...cepData, isManual: false };
+    setCepData(finalData);
+
+    try {
+      let cleanCep = cep.replace(/\D/g, '');
+      await AsyncStorage.setItem(`@cep_${cleanCep}`, JSON.stringify(finalData));
+    } catch (e) {
+      console.log('Erro ao salvar o CEP no storage:', e);
+    }
+  };
+
+  const buscarCep = async () => {
     if (cep.replace(/\D/g, '').length !== 8) {
       setError('Por favor, digite um CEP válido com 8 números.');
       setCepData(null);
@@ -42,6 +60,19 @@ export default function App() {
     setRandomPhoto(null);
 
     let cleanCep = cep.replace(/\D/g, '');
+
+    try {
+      const savedCepInfo = await AsyncStorage.getItem(`@cep_${cleanCep}`);
+      if (savedCepInfo !== null) {
+        setCepData(JSON.parse(savedCepInfo));
+        setRandomPhoto(sabrinaPhotos[Math.floor(Math.random() * sabrinaPhotos.length)]);
+        setLoading(false);
+        return; // Retorna pois encontrou salvo localmente
+      }
+    } catch (e) {
+      console.log('Erro ao ler CEP do storage:', e);
+    }
+
     let url = `https://viacep.com.br/ws/${cleanCep}/json/`;
 
     fetch(url)
@@ -49,7 +80,9 @@ export default function App() {
       .then((data) => {
         setLoading(false);
         if (data.erro) {
-          setError('Ops! CEP não encontrado, angel.');
+          setError('Ops! CEP não encontrado, angel. Por favor, insira os dados abaixo:');
+          setCepData({ logradouro: '', bairro: '', localidade: '', uf: '', complemento: '', isManual: true });
+          setRandomPhoto(sabrinaPhotos[Math.floor(Math.random() * sabrinaPhotos.length)]);
         } else {
           setCepData(data);
           setRandomPhoto(sabrinaPhotos[Math.floor(Math.random() * sabrinaPhotos.length)]);
@@ -104,21 +137,77 @@ export default function App() {
               <Text style={styles.cardInfo}>entregue neste endereço:</Text>
               <View style={styles.cardContent}>
                 <Text style={styles.label}>Logradouro:</Text>
-                <Text style={styles.value}>{cepData.logradouro || 'N/A'}</Text>
+                {cepData.isManual ? (
+                  <TextInput
+                    style={styles.manualInput}
+                    placeholder="Digite a rua/avenida"
+                    placeholderTextColor="#ffb3c6"
+                    value={cepData.logradouro}
+                    onChangeText={(text) => setCepData({ ...cepData, logradouro: text })}
+                  />
+                ) : (
+                  <Text style={styles.value}>{cepData.logradouro || 'N/A'}</Text>
+                )}
 
                 <Text style={styles.label}>Bairro:</Text>
-                <Text style={styles.value}>{cepData.bairro || 'N/A'}</Text>
+                {cepData.isManual ? (
+                  <TextInput
+                    style={styles.manualInput}
+                    placeholder="Digite o bairro"
+                    placeholderTextColor="#ffb3c6"
+                    value={cepData.bairro}
+                    onChangeText={(text) => setCepData({ ...cepData, bairro: text })}
+                  />
+                ) : (
+                  <Text style={styles.value}>{cepData.bairro || 'N/A'}</Text>
+                )}
 
                 <Text style={styles.label}>Cidade / UF:</Text>
-                <Text style={styles.value}>{cepData.localidade} - {cepData.uf}</Text>
+                {cepData.isManual ? (
+                  <View style={{ flexDirection: 'row' }}>
+                    <TextInput
+                      style={[styles.manualInput, { flex: 0.7, marginRight: 10 }]}
+                      placeholder="Cidade"
+                      placeholderTextColor="#ffb3c6"
+                      value={cepData.localidade}
+                      onChangeText={(text) => setCepData({ ...cepData, localidade: text })}
+                    />
+                    <TextInput
+                      style={[styles.manualInput, { flex: 0.3 }]}
+                      placeholder="UF"
+                      placeholderTextColor="#ffb3c6"
+                      value={cepData.uf}
+                      onChangeText={(text) => setCepData({ ...cepData, uf: text })}
+                      maxLength={2}
+                      autoCapitalize="characters"
+                    />
+                  </View>
+                ) : (
+                  <Text style={styles.value}>{cepData.localidade} - {cepData.uf}</Text>
+                )}
 
-                {cepData.complemento ? (
+                {cepData.complemento || cepData.isManual ? (
                   <>
                     <Text style={styles.label}>Complemento:</Text>
-                    <Text style={styles.value}>{cepData.complemento}</Text>
+                    {cepData.isManual ? (
+                      <TextInput
+                        style={styles.manualInput}
+                        placeholder="Opicional"
+                        placeholderTextColor="#ffb3c6"
+                        value={cepData.complemento}
+                        onChangeText={(text) => setCepData({ ...cepData, complemento: text })}
+                      />
+                    ) : (
+                      <Text style={styles.value}>{cepData.complemento}</Text>
+                    )}
                   </>
                 ) : null}
               </View>
+              {cepData.isManual && (
+                <TouchableOpacity style={styles.saveButton} onPress={handleSaveManual}>
+                  <Text style={styles.saveButtonText}>Salvar Endereço</Text>
+                </TouchableOpacity>
+              )}
               <Text style={styles.footerText}>xoxo, Sabrina 💋</Text>
             </View>
           )}
@@ -253,6 +342,37 @@ const styles = StyleSheet.create({
     color: '#d62828',
     fontWeight: '600',
     marginBottom: 5,
+  },
+  manualInput: {
+    fontSize: 16,
+    color: '#d62828',
+    backgroundColor: '#fff0f3',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#ffc2d1',
+    marginBottom: 10,
+    marginTop: 5,
+  },
+  saveButton: {
+    backgroundColor: '#e63946',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 15,
+    borderRadius: 12,
+    marginTop: 10,
+    marginBottom: 15,
+    shadowColor: '#e63946',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
   footerText: {
     textAlign: 'right',
